@@ -11,7 +11,7 @@ from selenium.common.exceptions import ElementClickInterceptedException, WebDriv
 from selenium.webdriver.common.by import By
 from zoneinfo import ZoneInfo
 
-# ---------- 配置（从环境变量读取） ----------
+# ----- 配置（从环境变量读取或在双引号内填写） -----
 EMAIL = os.getenv('EMAIL') or ""
 PASSWORD = os.getenv('PASSWORD') or ""
 COOKIE_VALUE = os.getenv('COOKIE_VALUE') or ""
@@ -474,8 +474,49 @@ def click_captcha_checkbox(sb, label='验证码', timeout=10):
         except Exception as e:
             last_error = e
 
-    print(f"{label}操作异常: {last_error}")
+    if not label.startswith('续期'):
+        print(f"{label}操作异常: {last_error}")
     return False
+
+def mask_email(email):
+    if not email or '@' not in email:
+        return email or ''
+
+    local, domain = email.split('@', 1)
+    if len(local) <= 2:
+        masked_local = local[0] + '****' if local else '****'
+    elif len(local) <= 4:
+        masked_local = f"{local[0]}****{local[-1]}"
+    else:
+        masked_local = f"{local[:2]}****{local[-2:]}"
+    return f"{masked_local}@{domain}"
+
+def build_success_message(project_name, old_expiry, new_expiry):
+    masked_email = mask_email(EMAIL)
+    lines = [
+        "🇫🇷 Aclclouds 续期通知",
+        "",
+        "✅ 续期成功",
+        f"⏱️ 新过期时间: {new_expiry}",
+        f"👤 登录账户: {masked_email}",
+        f"⏱️ 运行时间: {beijing_time_str()}",
+    ]
+    return "\n".join(lines)
+
+def build_unconfirmed_message(project_name, old_expiry, new_expiry, result_note):
+    lines = [
+        "🇫🇷 Aclclouds 续期通知",
+        "",
+        f"❌ 续期状态未确认: {project_name}",
+        f"账户: {EMAIL}",
+    ]
+    if old_expiry and old_expiry.lower() not in ['suspended', 'paused', '暂停']:
+        lines.append(f"旧过期: {old_expiry}")
+    lines.extend([
+        f"当前过期: {new_expiry}",
+        f"页面提示: {result_note or '未发现成功提示'}",
+    ])
+    return "\n".join(lines)
 
 def handle_renew_antibot(sb, project_name):
     """Renew 后如果弹出 Anti-bot confirmation，则点击确认。"""
@@ -725,9 +766,9 @@ def main():
                     success, new_expiry, result_note = wait_for_renew_result(sb, idx, timeout=30)
                     if success:
                         print(f"续期成功！状态: {result_note}，新过期: {new_expiry}")
-                        send_telegram(f"🇫🇷 Aclclouds 续期通知\n\n✅ 续期成功\n账户: {EMAIL}\n名称: {project_name}\n旧过期: {old_expiry}\n新过期: {new_expiry}\n运行时间: {beijing_time_str()}")
+                        send_telegram(build_success_message(project_name, old_expiry, new_expiry))
                     else:
-                        send_telegram(f"🇫🇷 Aclclouds 续期通知\n\n❌ 续期状态未确认: {project_name}\n账户: {EMAIL}\n旧过期: {old_expiry}\n当前过期: {new_expiry}\n页面提示: {result_note or '未发现成功提示'}")
+                        send_telegram(build_unconfirmed_message(project_name, old_expiry, new_expiry, result_note))
                 else:
                     note = get_renew_note(card)
                     print(f"无 Renew 按钮，提示: {note}")
